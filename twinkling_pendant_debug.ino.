@@ -1,0 +1,95 @@
+ /* Twinkling Pendant - see http://www.technoblogy.com/show?3RMX
+
+   David Johnson-Davies - www.technoblogy.com - 23rd February 2022
+   
+   This file is a port for attiny412 of the original
+   attiny10 project http://www.technoblogy.com/show?3RMX
+   
+   connect leds to pins 4,5,7
+   
+   ATtiny412 @ 1MHz (internal oscillator)
+   
+   CC BY 4.0
+   Licensed under a Creative Commons Attribution 4.0 International license: 
+   http://creativecommons.org/licenses/by/4.0/
+*/
+
+#include <avr/sleep.h>
+#include <avr/interrupt.h>
+
+#define F_CPU             1000000UL
+
+uint8_t  __attribute__ ((section (".noinit"))) Power;
+
+// LEDs:                426 153
+//const uint8_t Mask = 0b011101110;         // Valid light positions
+volatile uint8_t Lights = 0;              // All off
+volatile uint8_t Ticks;
+
+// Delay in 1/200ths of a second
+void _delay (uint8_t msec5) {
+  Ticks = 0;
+  while (Ticks < msec5);
+}
+
+
+void setup () {
+}
+
+void set() {
+  static uint8_t Count;
+  PORTA.OUT = 0;                              // All bits low
+  PORTA.DIR = 0;                              // All pins inputs
+  Count = (Count + 1) % 7;
+  uint8_t bits = Lights>>(7*Count) & 0b1111111;
+  PORTA.DIR = 0b11111111;                     // Make outputs
+  PORTA.OUT = bits;                           // Take bits high
+}
+
+
+void set2() {
+  static uint8_t Count;
+  PORTA.OUT = 0;                              // All bits low
+  PORTA.DIR = 0;                              // All pins inputs
+  
+  Count = (Count + 1) % 5 ;
+  uint8_t bits = Lights>>(3*Count) & 0b1111;
+  PORTA.DIR = (1<<Count | bits)<<1;           // Make outputs
+  PORTA.OUT = bits<<1;                        // Take bits high
+}
+
+
+void set3() {
+  static uint8_t Count;
+  PORTA.OUT = 0;                              // All bits low
+  PORTA.DIR = 0;                              // All pins inputs
+  Count = (Count + 1) % 3;
+  uint8_t bits = Lights>>(3*Count) & 0b111;
+  PORTA.DIR = 0b110;                          // Make outputs
+  PORTA.OUT = 0b100;                          // Take bits high
+}
+
+void loop () {
+  for(;;) {
+    Lights = 0b1000; // 1
+    set2();
+    delay(200);
+    Lights = 0b1000000; // 2
+    set2();
+    delay(200);
+    Lights = 0b10; // 3
+    set2();
+    delay(200);
+    Lights = 0b10000000; // 4
+    set2();
+    delay(200);
+    Lights = 0b100; // 5
+    set2();
+    delay(200);
+    Lights = 0b100000; // 6
+    set2();
+    delay(200);
+  }
+
+//  set3();
+}
