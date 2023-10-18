@@ -5,7 +5,7 @@
    This file is a port for attiny412 of the original
    attiny10 project http://www.technoblogy.com/show?3RMX
    
-   connect leds to pins 4,5,7
+   connect leds to pins 3,4,5,7
    
    ATtiny412 @ 1MHz (internal oscillator)
    
@@ -17,61 +17,100 @@
 #include <avr/sleep.h>
 #include <avr/interrupt.h>
 
-#define F_CPU             1000000UL
+#define LEDS_TOTAL 12
+#define GENERATOR_TOP 32767
+#define GENERATOR_LOW 0
 
-uint8_t  __attribute__ ((section (".noinit"))) Power;
+volatile uint8_t Lights = 0;  // All off
 
-// LEDs:                426 153
-//const uint8_t Mask = 0b011101110;       // Valid light positions
-volatile uint8_t Lights = 0;              // All off
-volatile uint8_t Ticks;
+uint8_t ledMultiplexMap[][2] = {
+  { 0b0, 0b0 },
+  { 0b0110, 0b10 },
+  { 0b0110, 0b100 },
+  { 0b1010, 0b10 },
+  { 0b1010, 0b1000 },
+  { 0b1100, 0b100 },
+  { 0b1100, 0b1000 },
+  { 0b1000010, 0b0000010 },
+  { 0b1000010, 0b1000000 },
+  { 0b1000100, 0b1000000 },
+  { 0b1000100, 0b0000100 },
+  { 0b1001000, 0b0001000 },
+  { 0b1001000, 0b1000000 },
+//  { 0b11000000, 0b10000000 },
+//  { 0b11000000, 0b01000000 },
+};
 
-// Delay in 1/200ths of a second
-void _delay (uint8_t msec5) {
-  Ticks = 0;
-  while (Ticks < msec5);
-}
+void multiplex() {
+  PORTA.OUT = 0;  // All bits low
+  PORTA.DIR = 0;  // All pins inputs
 
-// Multiplex LEDs
-ISR(TCB0_INT_vect) {
-  TCB0.INTFLAGS = TCB_CAPT_bm;                // Clear the interrupt flag
-
-  static uint8_t Count;
-  PORTA.OUT = 0;                              // All bits low
-  PORTA.DIR = 0;                              // All pins inputs
-  Count = (Count + 1) % 5 ;
-  uint8_t bits = Lights>>(3*Count) & 0b1111;
-  PORTA.DIR = (1<<Count | bits)<<1;           // Make outputs
-  PORTA.OUT = bits<<1;                        // Take bits high
-
-  Ticks++;
+  PORTA.DIR = ledMultiplexMap[Lights][0];  // Make outputs
+  PORTA.OUT = ledMultiplexMap[Lights][1];  // Take bits high
 }
 
 void setup () {
-  sei();
-
-  TCB0.CCMP = (unsigned int)(F_CPU/500 - 1);           // Divide clock to give 1999*Hz
-  TCB0.CTRLA = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm ; // Enable timer, divide by 1
-  TCB0.CTRLB = 0;                                      // Periodic Interrupt Mode
-  TCB0.INTCTRL = TCB_CAPT_bm;                          // Enable interrupt
-  
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-  _delay(20);                              // 100 msec
-  Power = 1 || ~Power & 1; // todo find why hardware reset is not reseting the microcontroller
+  rtcPitSetup();
+  sleepSetup();
+  sleep();
 }
 
 void loop () {
-  if (Power) {
-    for (int n=0; n<=32767; n++) {
-      for (int i=1; i<8; i++) {
-        int k = n % (30 + i);
-        if (k == 0 && i != 4) Lights = Lights | 1<<i; // LED on
-        else Lights = Lights & ~(1<<i);               // LED off
-      }
-    _delay(20);                            // 100 msec
-    }
+}
+  
+// Interrupt Service Routine called every second
+ISR(RTC_PIT_vect) {
+  RTC.PITINTFLAGS = RTC_PI_bm;  // Clear interrupt flag
+
+  generator();
+  multiplex();
+
+  sleep();
+}
+
+uint16_t n = GENERATOR_TOP;
+uint8_t i = LEDS_TOTAL;
+void generator() {
+  int k = n % (1 + i);
+
+  if (k == 0) {
+    Lights = i; // LED on
+  } else {
+    Lights = 0; // LED's off
   }
-  PORTA.OUT = 0;
+  
+  --i;
+  if (i == 1) {
+    i = LEDS_TOTAL;
+    --n;
+    if (n == GENERATOR_LOW) {
+      n = GENERATOR_TOP;  
+    }
+  }      
+}
+
+void sleep() {
+  sleep_cpu();    
+}
+
+void rtcPitSetup() {
+  // All internal clock sources are enabled automatically when they are requested by a peripheral
+  RTC.CLKSEL = RTC_CLKSEL_INT32K_gc;
+    
+  // RTC Clock Cycles 2048, enabled ie 16Hz interrupt
+  RTC.PITCTRLA = RTC_PERIOD_CYC2048_gc | RTC_PITEN_bm; 
+  RTC.PITINTCTRL = RTC_PI_bm;  // Periodic Interrupt: enabled
+}
+
+void sleepSetup() {
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);  //PWR_DOWN, IDLE, STANDBY
   sleep_enable();
-  sleep_cpu();
+  
+  // Turn on all the pullups for minimal power in sleep
+  PORTA.PIN0CTRL = PORT_PULLUPEN_bm;  // UPDI
+//  PORTA.PIN1CTRL = PORT_PULLUPEN_bm;
+//  PORTA.PIN2CTRL = PORT_PULLUPEN_bm;
+//  PORTA.PIN3CTRL = PORT_PULLUPEN_bm;
+  PORTA.PIN6CTRL = PORT_PULLUPEN_bm;
+//  PORTA.PIN7CTRL = PORT_PULLUPEN_bm;
 }
